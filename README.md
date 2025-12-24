@@ -7,6 +7,7 @@ The goal of this project is to predict the probability of a borrower defaulting 
 This is framed as a **binary classification problem** with imbalanced classes, reflecting real-world credit risk scenarios.
 
 ## Project Structure
+```
 credit-default-scoring/
 |
 |-- data/                            # Raw and processed datasets
@@ -26,7 +27,7 @@ credit-default-scoring/
 |-- reports/                         # Conclusions and analysis
 |-- README.md
 |-- requirements.txt
->>>>>>> f467cda (Add README for ML credit scoring project)
+```
 
 ## Data Generation
 Synthetic dataset is used for demonstration purposes. Features include:
