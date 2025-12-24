@@ -8,24 +8,25 @@ This is framed as a **binary classification problem** with imbalanced classes, r
 
 ## Project Structure
 credit-default-scoring/
-│
-├── data/ # Raw and processed datasets
-│  ├── raw/
-│  └── processed/
-├── notebooks/ # Jupyter notebooks
-│  ├── 01_eda.ipynb
-│  ├── 02_feature_engineering.ipynb
-│  └── 03_modeling.ipynb
-├── src/ # Python modules
-│  ├── data_generation.py
-│  ├── preprocessing.py
-│  ├── features.py
-│  ├── models.py
-│  └── metrics.py
-├── experiments/ # Model results, baseline comparisons
-├── reports/ # Conclusions and analysis
-├── README.md
-└── requirements.txt
+|
+|-- data/                            # Raw and processed datasets
+|   |-- raw/
+|   |-- processed/
+|-- notebooks/                       # Jupyter notebooks
+|   |-- 01_eda.ipynb
+|   |-- 02_feature_engineering.ipynb
+|   |-- 03_modeling.ipynb
+|-- src/                             # Python modules
+|   |-- data_generation.py
+|   |-- preprocessing.py
+|   |-- features.py
+|   |-- models.py
+|   |-- metrics.py
+|-- experiments/                     # Model results, baseline comparisons
+|-- reports/                         # Conclusions and analysis
+|-- README.md
+|-- requirements.txt
+>>>>>>> f467cda (Add README for ML credit scoring project)
 
 ## Data Generation
 Synthetic dataset is used for demonstration purposes. Features include:
