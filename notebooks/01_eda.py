@@ -14,249 +14,190 @@
 # ---
 
 # %%
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path.cwd().parent  # notebooks -> project root
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# %% [markdown]
+# # Imports, Config, Load, Split
+
+# %%
 # 01_eda.ipynb
 # -*- coding: utf-8 -*-
 
+
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.model_selection import train_test_split
 from IPython.display import display
 
-# -----------------------------
-# Config
-# -----------------------------
+from src.eda.audit import (
+    duplicate_rate,
+    low_variance_report,
+    business_rules_violations,
+    target_sanity
+)
+from src.eda.signal import (
+    ks_report,
+    target_correlations
+)
+from src.eda.reports import (
+    feature_quality_report,
+    iv_train_test_report
+)
+from src.eda.plots import (
+    plot_kde_by_target,
+    matrix_correlation,
+    plot_badrate_binning,
+    plot_badrate_stability_grid
+)
+
 TARGET = "default"
 
 NUM_FEATURES = [
-    "age", "income", "employment_length", "dti",
-    "previous_loans", "delinquencies", "credit_history"
+    "age",
+    "income",
+    "employment_length",
+    "dti",
+    "previous_loans",
+    "delinquencies",
+    "credit_history"
 ]
 
-CLIP_QUANTILES = (0.01, 0.99)
-SUMMARY_QUANTILES = (0.01, 0.5, 0.99)
-CORR_THRESHOLD = 0.2
-N_BINS = 10
-
-sns.set_style("whitegrid")
-plt.rcParams["figure.figsize"] = (6, 4)
-
-# -----------------------------
-# Load data
-# -----------------------------
 df = pd.read_csv("../data/raw/credit_data.csv")
 
+df_train, df_test = train_test_split(
+    df,
+    test_size=0.3,
+    random_state=42,
+    stratify=df[TARGET]
+)
 
-# -----------------------------
-# Basic checks
-# -----------------------------
-def basic_data_checks(df, target, features):
-    assert target in df.columns, "Target column not found"
-    missing = set(features) - set(df.columns)
-    assert not missing, f"Missing features: {missing}"
+# %% [markdown]
+# # Data Quality Audit
 
-    print("Shape:", df.shape)
-    print("\nTarget distribution:")
-    print(df[target].value_counts(normalize=True))
+# %%
+print("Train shape:", df_train.shape)
+print("Test shape:", df_test.shape)
 
+print("\nTarget rate:")
+display(
+    pd.DataFrame({
+        "train": df_train[TARGET].mean(),
+        "test": df_test[TARGET].mean()
+    }, index=["bad_rate"])
+)
 
-basic_data_checks(df, TARGET, NUM_FEATURES)
-
-
-# -----------------------------
-# Quantile summary
-# -----------------------------
-def quantile_summary(df, features, q):
-    return (
-        df[features]
-        .quantile(q)
-        .T
-        .rename(columns={q[0]: "q01", q[1]: "median", q[2]: "q99"})
-    )
-
-
-quantiles = quantile_summary(df, NUM_FEATURES, SUMMARY_QUANTILES)
-display(quantiles)
+display(duplicate_rate(df_train))
+display(low_variance_report(df_train, NUM_FEATURES))
+display(business_rules_violations(df_train, NUM_FEATURES))
+display(target_sanity(df_train, TARGET))
 
 
-# -----------------------------
-# Missing by target
-# -----------------------------
-def missing_by_target(df, features, target):
-    return (
-        df.groupby(target)[features]
-        .apply(lambda x: x.isnull().mean())
-        .T
-        .rename(columns={0: "miss_rate_0", 1: "miss_rate_1"})
-    )
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# ---
+# ### Выводы по data quality
+#
+# Данные прошли базовую проверку качества и логической согласованности.
+#
+# **Target:**
+# - Bad rate в train-сэмпле составляет ~6.7%, что соответствует степени риска в сегменте потребительских кредитов, имеющих массовый и необеспеченный характер.
+#
+# **Логические несоответствия:**
+# - Выявлена существенная доля наблюдений, в которых:
+#   - стаж работы превышает возраст заемщика;
+#   - длина кредитной истории превышает возраст заемщика.
+# - Доля таких наблюдений составляет 22–34% в зависимости от правила, что классифицируется как критическое логическое нарушение.
+#
+# **Принятое решение:**
+# - Для синтетического датасета данные нарушения рассматриваются как артефакт генерации данных;
+# - Коррекция выполняется на уровне data generation / preprocessing и не затрагивает этап EDA;
+# - В дальнейшем используется ограничение максимальной длины кредитной истории, согласованное с возрастом заемщика.
+#
+# Других критических проблем (дубликаты, константные признаки, отрицательные значения) не выявлено.
+#
 
+# %% [markdown]
+# # Signal EDA
 
-missing_stats = missing_by_target(df, NUM_FEATURES, TARGET)
-display(missing_stats)
+# %%
+plot_kde_by_target(df_train, NUM_FEATURES, TARGET, n_cols=3)
+display(ks_report(df_train, NUM_FEATURES, TARGET))
+matrix_correlation(df_train, NUM_FEATURES, method="spearman")
+target_correlations(df_train, NUM_FEATURES, TARGET, method="spearman")
 
+# %% [markdown]
+# ---
+# ### Выводы по Signal EDA
+#
+# Для большинства числовых признаков наблюдается различие распределений между good и bad сегментами, однако степень overlap варьируется.
+#
+# Наиболее выраженный separation (по KDE и KS-statistic) демонстрируют:
+# - `delinquencies`
+# - `dti`
+#
+# Признаки с минимальным различием распределений (KS < 0.05) рассматриваются как слабые кандидаты и подлежат дополнительной проверке на этапе биннинга и IV.
+#
+# Correlation analysis использовался исключительно как вспомогательный инструмент и не рассматривался как критерий отбора признаков. Можно отметить высокую корреляцию переменной `age` с `employment_length` и `credit_history`, которая потенциально может быть исключена из моделирования.
+#
 
-# -----------------------------
-# Numeric distributions (clipped)
-# -----------------------------
-def plot_numeric_distributions(df, features, clip_q):
-    n_cols = 3
-    n_rows = int(np.ceil(len(features) / n_cols))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
-    axes = axes.flatten()
+# %% [markdown]
+# # Feature Quality Summary
 
-    for i, col in enumerate(features):
-        low, high = df[col].quantile(clip_q)
-        sns.histplot(df[col].clip(low, high), bins=40, ax=axes[i])
-        axes[i].set_title(f"{col} (clipped)")
+# %%
+config_quality = {
+    "df": df_train,
+    "features": NUM_FEATURES,
+    "target": TARGET,
+    "n_bins": 10,
+    "min_bin_share": 0.01
+}
 
-    for j in range(i+1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
-
-plot_numeric_distributions(df, NUM_FEATURES, CLIP_QUANTILES)
-
-
-# -----------------------------
-# Feature vs target
-# -----------------------------
-def plot_vs_target(df, features, target):
-    n_cols = 3
-    n_rows = int(np.ceil(len(features) / n_cols))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
-    axes = axes.flatten()
-
-    for i, col in enumerate(features):
-        sns.boxplot(x=target, y=col, data=df, showfliers=False, ax=axes[i])
-        axes[i].set_title(col)
-
-    for j in range(i+1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
-
-plot_vs_target(df, NUM_FEATURES, TARGET)
-
-
-# -----------------------------
-# Target correlations
-# -----------------------------
-def target_correlations(df, features, target, method="spearman"):
-    return (
-        df[features + [target]]
-        .corr(method=method)[target]
-        .drop(target)
-        .sort_values(key=lambda x: x.abs(), ascending=False)
-    )
-
-
-corr_target = target_correlations(df, NUM_FEATURES, TARGET)
-# display(corr_target[corr_target.abs() > CORR_THRESHOLD])
-display(corr_target)
-
-
-# -----------------------------
-# Binning
-# -----------------------------
-def quantile_binning(df, feature, target, n_bins):
-    tmp = df[[feature, target]].copy()
-    tmp["bin"] = pd.qcut(tmp[feature], q=n_bins, duplicates="drop")
-
-    agg = (
-        tmp.groupby("bin", observed=True)
-        .agg(
-            total=(target, "count"),
-            bads=(target, "sum"),
-            bad_rate=(target, "mean")
-        )
-        .reset_index()
-    )
-    return agg
-
-
-def is_monotonic(series):
-    diffs = series.diff().dropna()
-    return (diffs >= 0).all() or (diffs <= 0).all()
-
-
-def plot_badrate_binning(df, features, target, n_bins=N_BINS):
-    n_cols = 3
-    n_rows = int(np.ceil(len(features) / n_cols))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
-    axes = axes.flatten()
-
-    for i, col in enumerate(features):
-        agg = quantile_binning(df, col, target, n_bins)
-
-        axes[i].plot(range(len(agg)), agg["bad_rate"], marker="o", linestyle="-", color="b")
-        axes[i].set_xticks(range(len(agg)))
-        axes[i].set_xticklabels(agg.index, rotation=45, ha="right")
-        axes[i].set_ylabel("Bad Rate")
-        axes[i].set_xlabel(col)
-        axes[i].set_title(f"{col} vs Bad Rate")
-
-    for j in range(i+1, len(axes)):
-        fig.delaxes(axes[j])
-
-    plt.tight_layout()
-    plt.show()
-
-
-plot_badrate_binning(df, NUM_FEATURES, TARGET)
-
-
-# -----------------------------
-# IV calculation
-# -----------------------------
-def calculate_iv(agg):
-    eps = 1e-6
-    total_good = (agg["total"] - agg["bads"]).sum()
-    total_bad = agg["bads"].sum()
-
-    agg = agg.copy()
-    agg["dist_good"] = (agg["total"] - agg["bads"]) / (total_good + eps)
-    agg["dist_bad"] = agg["bads"] / (total_bad + eps)
-    agg["woe"] = np.log((agg["dist_good"] + eps) / (agg["dist_bad"] + eps))
-    agg["iv"] = (agg["dist_good"] - agg["dist_bad"]) * agg["woe"]
-
-    return agg["iv"].sum()
-
-
-# -----------------------------
-# Feature quality report
-# -----------------------------
-def feature_quality_report(df, features, target, n_bins):
-    rows = []
-
-    for feat in features:
-        agg = quantile_binning(df, feat, target, n_bins)
-        rows.append({
-            "feature": feat,
-            "iv": calculate_iv(agg),
-            "monotonic": is_monotonic(agg["bad_rate"]),
-            "bins": agg.shape[0]
-        })
-
-    return (
-        pd.DataFrame(rows)
-        .sort_values("iv", ascending=False)
-        .reset_index(drop=True)
-    )
-
-
-quality_report = feature_quality_report(df, NUM_FEATURES, TARGET, N_BINS)
-display(quality_report)
-
+display(feature_quality_report(**config_quality))
+plot_badrate_binning(**config_quality)
 
 
 # %% [markdown]
-# ### Feature diagnostics summary:
-# * признаки с IV < 0.02 (кандидаты на удаление)
-# * немонотонные (требуют биннинга / трансформации)
-# * стабильные и монотонные (можно отдавать в модель)
+# ---
+# ### Выводы по Feature Quality Summary:
+# * признаки с IV < 0.02 (кандидаты на удаление);
+# * число бинов трансформировано с учетом требования монотонности bad rate;
+# * переменная `previous_loans` потенциально может быть исключена из моделирования.
+
+# %% [markdown]
+# # Stability check (train vs test)
+
+# %%
+config_stability = {
+    "df_train": df_train,
+    "df_test": df_test,
+    "features": NUM_FEATURES,
+    "target": TARGET,
+    "n_bins": 10,
+    "min_bin_share": 0.01
+}
+
+display(iv_train_test_report(**config_stability))
+plot_badrate_stability_grid(**config_stability)
+
+
+# %% [markdown]
+# ---
+# ### Итоговые выводы по EDA
+#
+# EDA выполнен исключительно на train-сэмпле с последующей проверкой устойчивости на отложенной выборке.
+#
+# Для всех признаков выполнен корректный скоринговый биннинг с контролем монотонности bad rate.
+#
+# Stability-check показал, что большинство признаков сохраняют форму риска и сопоставимые значения IV на test.
+#
+# На основании IV-stability и визуального анализа bad rate сформирован финальный список признаков для этапа моделирования:
+# * `delinquencies`;
+# * `dti`;
+# * `employment_length`;
+# * `credit_history`;
+# * `income`.
+#
 
 # %%

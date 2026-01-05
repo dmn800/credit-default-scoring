@@ -18,6 +18,15 @@ credit-default-scoring/
 |   |-- 02_feature_engineering.ipynb
 |   |-- 03_modeling.ipynb
 |-- src/                             # Python modules
+|   |-- eda/
+|   |   |-- __init__.py
+|   |   |-- audit.py                 # data quality check
+|   |   |-- signal.py                # KS, correlation
+|   |   |-- binning.py               # quantile binning, monotonic
+|   |   |-- iv.py                    # IV, WOE
+|   |   |-- reports.py               # feature quality report, iv/train/test report
+|   |   |-- plots.py                 # KDE, correlation, badrate binning, train/test
+|   |-- __init__.py
 |   |-- data_generation.py
 |   |-- preprocessing.py
 |   |-- features.py

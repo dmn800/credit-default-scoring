@@ -7,7 +7,7 @@ def generate_synthetic_credit_data(
     random_state: int = 42
 ) -> pd.DataFrame:
     """
-    Generate synthetic credit default dataset^
+    Generate synthetic credit default dataset
 
     Characteristics:
     - latent risk segmentation (low / medium / high)
